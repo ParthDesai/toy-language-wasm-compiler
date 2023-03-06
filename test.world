@@ -1,0 +1,7 @@
+Animal pikachu pika_pika pokemon
+Instance ashPika pikachu
+
+World X contains ashPika
+Transfer X.ashPika to X
+narrate
+

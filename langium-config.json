@@ -1,0 +1,12 @@
+{
+    "projectName": "Worlds",
+    "languages": [{
+        "id": "worlds",
+        "grammar": "src/language-server/worlds.langium",
+        "fileExtensions": [".world"],
+        "textMate": {
+            "out": "syntaxes/worlds.tmLanguage.json"
+        }
+    }],
+    "out": "src/language-server/generated"
+}

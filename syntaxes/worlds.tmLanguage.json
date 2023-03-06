@@ -1,0 +1,47 @@
+{
+  "name": "worlds",
+  "scopeName": "source.worlds",
+  "fileTypes": [
+    ".world"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "name": "keyword.control.worlds",
+      "match": "\\b(Animal|Instance|Transfer|World|contains|narrate|to)\\b"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.worlds",
+          "begin": "/\\*",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.worlds"
+            }
+          },
+          "end": "\\*/",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.worlds"
+            }
+          }
+        },
+        {
+          "begin": "//",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.whitespace.comment.leading.worlds"
+            }
+          },
+          "end": "(?=$)",
+          "name": "comment.line.worlds"
+        }
+      ]
+    }
+  }
+}
