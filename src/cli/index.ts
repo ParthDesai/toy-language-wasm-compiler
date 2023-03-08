@@ -11,7 +11,7 @@ import { NodeFileSystem } from 'langium/node';
 export const generateAction = async (fileName: string, opts: GenerateOptions): Promise<void> => {
     const services = createWorldsServices(NodeFileSystem).Worlds;
     const main = await extractAstNode<Main>(fileName, services);
-    const generatedFilePath = generateWasm(main, fileName, opts.destination);
+    const generatedFilePath = await generateWasm(main, fileName, opts.destination);
     console.log(chalk.green(`Wasm code generated successfully: ${generatedFilePath}`));
 };
 

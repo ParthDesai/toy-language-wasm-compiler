@@ -5,8 +5,14 @@ import { Main, Animal, Instance, World } from '../language-server/generated/ast'
 import { extractDestinationAndName } from './cli-util';
 
 function stringToBinary(str: string): {data: Uint8Array, length: number} {
-    const data = new Uint8Array(str.split('').map(function (ch) {return ch.charCodeAt(0)}));
+    const serializedStr = str.split('').map(function (ch) {return ch.charCodeAt(0)});
+    const data = new Uint8Array(serializedStr.length + 1);
+    data.set(serializedStr, 0);
     return {data, length: data.length};
+}
+
+function offset32(i: number): number {
+    return i*4;
 }
 
 function animalToBinary(animal: Animal): {data: Uint8Array, length: number} {
@@ -14,15 +20,21 @@ function animalToBinary(animal: Animal): {data: Uint8Array, length: number} {
     const serializedAnimalName = stringToBinary(animal.name);
     const serializedAnimalSound = stringToBinary(animal.sound);
 
-    const animalArray = new Uint8Array(3 + serializedGenes.length + serializedAnimalName.length + serializedAnimalSound.length);
-    animalArray[0] = 3;
-    animalArray.set(serializedGenes.data, animalArray[0]);
+    const indexes: number[] = [
+        offset32(3), 
+        offset32(3) + serializedGenes.length,
+        offset32(3) + serializedGenes.length + serializedAnimalName.length
+    ];
 
-    animalArray[1] = animalArray[0] + serializedGenes.length;
-    animalArray.set(serializedAnimalName.data, animalArray[1]);
+    const animalArray = new Uint8Array(offset32(3) + serializedGenes.length + serializedAnimalName.length + serializedAnimalSound.length);
+    new DataView(animalArray.buffer).setInt32(offset32(0), indexes[0], true);
+    animalArray.set(serializedGenes.data, indexes[0]);
 
-    animalArray[2] = animalArray[1] + serializedAnimalName.length;
-    animalArray.set(serializedAnimalSound.data, animalArray[2]);
+    new DataView(animalArray.buffer).setInt32(offset32(1), indexes[1], true);
+    animalArray.set(serializedAnimalName.data, indexes[1]);
+
+    new DataView(animalArray.buffer).setInt32(offset32(2), indexes[2], true);
+    animalArray.set(serializedAnimalSound.data, indexes[2]);
 
     return {data: animalArray, length: animalArray.length};
 }
@@ -36,41 +48,59 @@ function instanceToBinary(instance: Instance, animalTable: Map<string, number>):
     if (speciesRef === undefined) {
         throw Error("Cannot find reference to species");
     }
-    const serializedSpeciesRef = new Uint8Array(8);
-    new DataView(serializedSpeciesRef.buffer).setUint32(0, speciesRef);
+    const serializedSpeciesRef = new Uint8Array(4);
+    new DataView(serializedSpeciesRef.buffer).setUint32(0, speciesRef, true);
 
-    const instanceArray = new Uint8Array(2 + serializedName.length + 8);
-    instanceArray[0] = 2;
-    instanceArray.set(serializedName.data, instanceArray[0]);
+    const indexes: number[] = [
+        offset32(3), 
+        offset32(3) + offset32(1),
+        offset32(3) + offset32(1) + serializedName.length
+    ];
 
-    instanceArray[1] = instanceArray[0] + serializedName.length;
-    instanceArray.set(serializedSpeciesRef, instanceArray[1]);
+    const instanceArray = new Uint8Array(offset32(3) + 4 + serializedName.length + 4);
+    new DataView(instanceArray.buffer).setInt32(offset32(0), indexes[0], true);
+
+    new DataView(instanceArray.buffer).setInt32(offset32(1), indexes[1], true);
+    instanceArray.set(serializedName.data, indexes[1]);
+
+    new DataView(instanceArray.buffer).setInt32(offset32(2), indexes[2], true);
+    instanceArray.set(serializedSpeciesRef, indexes[2]);
 
     return {data: instanceArray, length: instanceArray.length};
+}
+
+function setInitialWorldRefOnInstance(mem: Uint8Array, instanceRef: number, worldRef: number): void {
+    new DataView(mem.buffer).setInt32(instanceRef + offset32(3), worldRef, true);
 }
 
 function worldToBinary(world: World, instanceTable: Map<string, number>): {data: Uint8Array, length: number} {
     const serializedName = stringToBinary(world.name);
 
     const serializedContains = Array<Uint8Array>(world.contains.length);
-    const worldArray = new Uint8Array(2 + serializedName.length + world.contains.length*8);
 
-    worldArray[0] = 2;
-    worldArray.set(serializedName, worldArray[0]);
+    const indexes: number[] = [
+        offset32(2),
+        offset32(2) + serializedName.length
+    ];
 
-    worldArray[1] = worldArray[0] + serializedName.length;
+    const worldArray = new Uint8Array(offset32(2) + serializedName.length + world.contains.length*4);
+
+    new DataView(worldArray.buffer).setInt32(offset32(0), indexes[0], true);
+    worldArray.set(serializedName.data, indexes[0]);
+
+    new DataView(worldArray.buffer).setInt32(offset32(1), indexes[1], true);
     world.contains.forEach((containedInstance, i) => {
         if (containedInstance.ref === undefined) {
             throw Error("Cannot find reference to instance");
         }
 
-        serializedContains[i] = new Uint8Array(8);
+        serializedContains[i] = new Uint8Array(4);
         const instanceRef = instanceTable.get(containedInstance.ref.name);
         if (instanceRef === undefined) {
             throw Error("Cannot find reference to instance in table");
         }
-        new DataView(serializedContains[i].buffer).setUint32(0, instanceRef);
-        worldArray.set(serializedContains[i], (i*8)+worldArray[1]);
+        new DataView(serializedContains[i].buffer).setInt32(0, instanceRef, true);
+        worldArray.set(serializedContains[i], (i*4)+indexes[1]);
     });
 
     return {data: worldArray, length: worldArray.length};
@@ -106,6 +136,7 @@ function createMemory(main: Main): {mem: Uint8Array, animalTable: Map<string, nu
 
     main.worlds.forEach((world, i) => {
         const serializedWorld = worldToBinary(world, instanceTable);
+        console.log(serializedWorld);
         worldTable.set(world.name, currentIndex);
         serializedWorlds[i] = serializedWorld.data;
 
@@ -139,7 +170,22 @@ function createMemory(main: Main): {mem: Uint8Array, animalTable: Map<string, nu
         }
 
         mem.set(serializedWorlds[i], offset);
+
+        world.contains.forEach((instance) => {
+            if (instance.ref === undefined) {
+                throw Error("unresolved reference");
+            }
+
+            let instanceRef = instanceTable.get(instance.ref.name);
+            if (instanceRef == undefined) {
+                throw Error("unresolved offset");
+            }
+
+            setInitialWorldRefOnInstance(mem, instanceRef, offset);
+        });
     });
+
+    console.dir(mem, {'maxArrayLength': null});
 
 
     return {
@@ -150,7 +196,7 @@ function createMemory(main: Main): {mem: Uint8Array, animalTable: Map<string, nu
     };
 }
 
-export function generateWasm(main: Main, filePath: string, destination: string | undefined): string {
+export function generateWasm(main: Main, filePath: string, destination: string | undefined): Promise<string> {
     const data = extractDestinationAndName(filePath, destination);
     const generatedFilePath = `${path.join(data.destination, data.name)}.wasm`;
 
@@ -158,16 +204,81 @@ export function generateWasm(main: Main, filePath: string, destination: string |
 
     const fileNode = new CompositeGeneratorNode();
 
-    import('binaryen').then(function (binaryen) {
-        const wasmModule = new binaryen.default.Module();
+    import('binaryen').then(function (mod) {
+        const binaryen = mod.default;
+        const wasmModule = new mod.default.Module();
         wasmModule.setMemory(1, 256, "0", [
             {
                 passive: false,
-                offset: wasmModule.i32.const(10),
+                offset: wasmModule.i32.const(0),
                 data: memoryLayout.mem
             }
         ], false);
-    
+
+        const wasmInstructions: number[] = []; 
+
+        /* // Memory transfer instructions
+        main.transfer.forEach((transfer) => {
+            if (transfer.animalToTransfer.ref === undefined) {
+                throw new Error("unable to find reference to instance");
+            }
+
+            if (transfer.to.ref === undefined) {
+                throw new Error("unable to find reference to the world to transfer instance to");
+            }
+
+            const instanceRef = memoryLayout.instanceTable.get(transfer.animalToTransfer.ref.name);
+            if (instanceRef === undefined) {
+                throw new Error("unable to find memory reference to instance");
+            }
+            const worldRef = memoryLayout.worldTable.get(transfer.to.ref?.name);
+            if (worldRef === undefined) {
+                throw new Error("unable to find memory reference to world");
+            }
+
+            wasmInstructions.push(wasmModule.i32.store(instanceRef + 3, 0, wasmModule.i32.const(0), wasmModule.i32.const(worldRef)));
+        });
+
+        //Narrating instruction
+        main.instances.forEach(function (instance) {
+            const instanceRef = memoryLayout.instanceTable.get(instance.name);
+            if (instanceRef === undefined) {
+                throw new Error("unable to find reference to the instance");
+            }
+
+            // Fetch the world name
+            
+            let worldRefLoad = wasmModule.i32.load(0, 0, wasmModule.i32.const(instanceRef + 3));
+            let worldNameLoad = wasmModule.i32.add(worldRefLoad, wasmModule.i32.const(2));
+            wasmInstructions.push(wasmModule.i32.load(0, 0, worldNameLoad));
+
+            // Fetch the animal name + species + sound
+            let animalRefLoad = wasmModule.i32.load(0, 0, wasmModule.i32.const(instanceRef+1));
+
+            // Fetch the instance name
+
+            
+
+            // TODO: Fix the instructions
+        }); */
+
+        // Return instruction
+        wasmInstructions.push(wasmModule.return(wasmModule.i32.load(66, 0, wasmModule.i32.const(0))));
+
+        wasmModule.addFunctionImport("log", "main", "log", binaryen.createType([binaryen.i32, binaryen.i32, binaryen.i32]), binaryen.createType([]));
+
+
+        // wasmModule.call("log", [wasmModule.i32.load(66, 0, wasmModule.i32.const(0))], binaryen.createType([])),
+        //     wasmModule.return(
+                
+        //     )
+
+        wasmModule.addFunction("add", binaryen.createType([]), binaryen.i32, [ binaryen.i32 ],
+        wasmModule.block(null, wasmInstructions)
+        );
+        wasmModule.addFunctionExport("add", "add");
+
+      
         // Optimize the module using default passes and levels
         wasmModule.optimize();
     
@@ -184,9 +295,9 @@ export function generateWasm(main: Main, filePath: string, destination: string |
         }
         fs.writeFileSync(generatedFilePath, toString(fileNode));
         return generatedFilePath; 
-    }).catch(function(err) {
-        console.log("error");
+    }).catch(function (err) {
+        console.log(err);
     });
 
-    return "";
+    return Promise.resolve("");
 }

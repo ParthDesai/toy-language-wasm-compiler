@@ -1,7 +1,9 @@
 Animal pikachu pika_pika pokemon
+Animal mabu me_me pokemon
 Instance ashPika pikachu
+Instance myMabu mabu
 
-World X contains ashPika
+World X contains ashPika myMabu
 Transfer X.ashPika to X
 narrate
 
