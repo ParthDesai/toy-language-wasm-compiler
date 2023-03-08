@@ -1,5 +1,4 @@
 import fs from 'fs';
-import { CompositeGeneratorNode, toString } from 'langium';
 import path from 'path';
 import { Main, Animal, Instance, World } from '../language-server/generated/ast';
 import { extractDestinationAndName } from './cli-util';
@@ -136,7 +135,6 @@ function createMemory(main: Main): {mem: Uint8Array, animalTable: Map<string, nu
 
     main.worlds.forEach((world, i) => {
         const serializedWorld = worldToBinary(world, instanceTable);
-        console.log(serializedWorld);
         worldTable.set(world.name, currentIndex);
         serializedWorlds[i] = serializedWorld.data;
 
@@ -185,8 +183,6 @@ function createMemory(main: Main): {mem: Uint8Array, animalTable: Map<string, nu
         });
     });
 
-    console.dir(mem, {'maxArrayLength': null});
-
 
     return {
         mem: mem,
@@ -202,9 +198,7 @@ export function generateWasm(main: Main, filePath: string, destination: string |
 
     let memoryLayout = createMemory(main);
 
-    const fileNode = new CompositeGeneratorNode();
-
-    import('binaryen').then(function (mod) {
+    return import('binaryen').then(function (mod) {
         const binaryen = mod.default;
         const wasmModule = new mod.default.Module();
         wasmModule.setMemory(1, 256, "0", [
@@ -217,7 +211,7 @@ export function generateWasm(main: Main, filePath: string, destination: string |
 
         const wasmInstructions: number[] = []; 
 
-        /* // Memory transfer instructions
+        // Memory transfer instructions
         main.transfer.forEach((transfer) => {
             if (transfer.animalToTransfer.ref === undefined) {
                 throw new Error("unable to find reference to instance");
@@ -236,9 +230,10 @@ export function generateWasm(main: Main, filePath: string, destination: string |
                 throw new Error("unable to find memory reference to world");
             }
 
-            wasmInstructions.push(wasmModule.i32.store(instanceRef + 3, 0, wasmModule.i32.const(0), wasmModule.i32.const(worldRef)));
+            wasmInstructions.push(wasmModule.i32.store(offset32(3), 0, wasmModule.i32.const(instanceRef), wasmModule.i32.const(worldRef)));
         });
 
+        
         //Narrating instruction
         main.instances.forEach(function (instance) {
             const instanceRef = memoryLayout.instanceTable.get(instance.name);
@@ -246,35 +241,67 @@ export function generateWasm(main: Main, filePath: string, destination: string |
                 throw new Error("unable to find reference to the instance");
             }
 
-            // Fetch the world name
-            
-            let worldRefLoad = wasmModule.i32.load(0, 0, wasmModule.i32.const(instanceRef + 3));
-            let worldNameLoad = wasmModule.i32.add(worldRefLoad, wasmModule.i32.const(2));
-            wasmInstructions.push(wasmModule.i32.load(0, 0, worldNameLoad));
-
-            // Fetch the animal name + species + sound
-            let animalRefLoad = wasmModule.i32.load(0, 0, wasmModule.i32.const(instanceRef+1));
+            // Fetch the instance header
+            let loadInstanceHeader = wasmModule.i32.load(0, 0, wasmModule.i32.const(instanceRef));
+            // Add the value of header to instance reference
+            let addWorldRefOffset = wasmModule.i32.add(loadInstanceHeader, wasmModule.i32.const(instanceRef));
+            // Load the reference to the world
+            let loadWorldRef = wasmModule.i32.load(0, 0, addWorldRefOffset);
+            // Load the reference to the name
+            let loadWorldNameRef = wasmModule.i32.load(0, 0, loadWorldRef);
+            // Add world name offset to the object offset
+            let getWorldName = wasmModule.i32.add(wasmModule.copyExpression(loadWorldRef), loadWorldNameRef);
 
             // Fetch the instance name
 
-            
+            // Fetch the instance name header
+            let loadInstanceNameHeader = wasmModule.i32.load(offset32(1), 0, wasmModule.i32.const(instanceRef));
+            // Add value of header to instance reference
+            let getInstanceName = wasmModule.i32.add(loadInstanceNameHeader, wasmModule.i32.const(instanceRef));
 
-            // TODO: Fix the instructions
-        }); */
+            // Fetch the animal name + species + sound
+
+            // Load the header that gives us offset of the animal ref
+            let loadInstanceAnimalRefHeader = wasmModule.i32.load(offset32(2), 0, wasmModule.i32.const(instanceRef));
+            // Add the offset with the instance reference
+            let addAnimalRefOffset = wasmModule.i32.add(loadInstanceAnimalRefHeader, wasmModule.i32.const(instanceRef));
+            // Load the animal reference at that offset
+            let loadAnimalRef = wasmModule.i32.load(0, 0, addAnimalRefOffset);
+
+            // load the animal name reference from previous load
+            let loadAnimalNameRef = wasmModule.i32.load(offset32(1), 0, loadAnimalRef);
+            // Add the offset with animal reference
+            let getAnimalName = wasmModule.i32.add(wasmModule.copyExpression(loadAnimalRef), loadAnimalNameRef);
+
+            // load the animal species reference from previous load
+            let loadAnimalGeneRef = wasmModule.i32.load(offset32(0), 0, loadAnimalRef);
+            // Add the offset with animal reference
+            let getAnimalGene = wasmModule.i32.add(wasmModule.copyExpression(loadAnimalRef), loadAnimalGeneRef);
+
+            // load the animal sound reference from previous load
+            let loadAnimalSoundRef = wasmModule.i32.load(offset32(2), 0, loadAnimalRef);
+            // Add the sound offset with animal reference
+            let getAnimalSound = wasmModule.i32.add(wasmModule.copyExpression(loadAnimalRef), loadAnimalSoundRef);
+
+            // make the narration call
+            wasmInstructions.push(wasmModule.call("log", [
+                getWorldName,
+                getAnimalGene,
+                getAnimalName,
+                getInstanceName,
+                getAnimalSound
+            ], binaryen.createType([])));
+            
+        });
+        
 
         // Return instruction
-        wasmInstructions.push(wasmModule.return(wasmModule.i32.load(66, 0, wasmModule.i32.const(0))));
+        wasmInstructions.push(wasmModule.return(wasmModule.i32.const(0)));
 
-        wasmModule.addFunctionImport("log", "main", "log", binaryen.createType([binaryen.i32, binaryen.i32, binaryen.i32]), binaryen.createType([]));
-
-
-        // wasmModule.call("log", [wasmModule.i32.load(66, 0, wasmModule.i32.const(0))], binaryen.createType([])),
-        //     wasmModule.return(
-                
-        //     )
+        wasmModule.addFunctionImport("log", "main", "log", binaryen.createType([binaryen.i32, binaryen.i32, binaryen.i32, binaryen.i32, binaryen.i32]), binaryen.createType([]));
 
         wasmModule.addFunction("add", binaryen.createType([]), binaryen.i32, [ binaryen.i32 ],
-        wasmModule.block(null, wasmInstructions)
+            wasmModule.block(null, wasmInstructions)
         );
         wasmModule.addFunctionExport("add", "add");
 
@@ -289,15 +316,12 @@ export function generateWasm(main: Main, filePath: string, destination: string |
         // Generate text format
         var textData = wasmModule.emitText();
         console.log(textData);
-    
+
         if (!fs.existsSync(data.destination)) {
             fs.mkdirSync(data.destination, { recursive: true });
         }
-        fs.writeFileSync(generatedFilePath, toString(fileNode));
+        
+        fs.writeFileSync(generatedFilePath, wasmModule.emitBinary());
         return generatedFilePath; 
-    }).catch(function (err) {
-        console.log(err);
     });
-
-    return Promise.resolve("");
 }

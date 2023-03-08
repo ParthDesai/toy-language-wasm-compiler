@@ -1,9 +1,16 @@
 Animal pikachu pika_pika pokemon
-Animal mabu me_me pokemon
-Instance ashPika pikachu
-Instance myMabu mabu
+Animal bulbasaur bulba_bulba pokemon
 
-World X contains ashPika myMabu
-Transfer X.ashPika to X
+Instance pikachu1 pikachu
+Instance bulbasaur1 bulbasaur
+
+Instance pikachu2 pikachu
+Instance bulbasaur2 bulbasaur
+
+World X contains pikachu1 bulbasaur1
+World Y contains pikachu2 bulbasaur2
+
+Transfer X.pikachu1 to Y
+Transfer Y.bulbasaur2 to X
 narrate
 
