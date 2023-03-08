@@ -1,16 +1,16 @@
-Animal pikachu pika_pika pokemon
-Animal bulbasaur bulba_bulba pokemon
+Animal ant no_sound insect
+Animal dog bark_bark mammal
 
-Instance pikachu1 pikachu
-Instance bulbasaur1 bulbasaur
+Instance tommy dog
+Instance ant_1343 ant
 
-Instance pikachu2 pikachu
-Instance bulbasaur2 bulbasaur
+Instance stan dog
+Instance ant_3455 ant
 
-World X contains pikachu1 bulbasaur1
-World Y contains pikachu2 bulbasaur2
+World dogW contains tommy stan
+World antW contains ant_1343 ant_3455
 
-Transfer X.pikachu1 to Y
-Transfer Y.bulbasaur2 to X
+Transfer dogW.tommy to antW
+Transfer antW.ant_3455 to dogW
 narrate
 
